@@ -2,7 +2,6 @@ import tornado.ioloop
 import tornado.web
 import tornado.gen
 import tornado.tcpserver
-from functools import partial
 from tornado.iostream import StreamClosedError
 
 
@@ -20,44 +19,48 @@ class StreamHandler(tornado.web.RequestHandler):
 
     @tornado.web.asynchronous
     def get(self):
-        self.set_header('Content-Type', 'video/mpg')
+        self.set_header('Content-Type', 'video/webm')
         self.flush()
 
-    @tornado.gen.coroutine
-    def write_media(self, data):
+    async def write_media(self, data):
         try:
             self.write(data)
-            yield self.flush()
+            await self.flush()
         except StreamClosedError:
             pass
 
 
 class Server(tornado.tcpserver.TCPServer):
-    def handle_stream(self, stream, addresss):
-        print('Streamer connected')
-        self.ioloop = tornado.ioloop.IOLoop.instance()
-        self.stream = stream
-        self.read()
 
-    def read(self):
-        self.stream.read_bytes(1024, self.send_data)
+    @tornado.gen.coroutine
+    def handle_stream(self, stream, address):
+        print('Streamer connected.')
+
+        while True:
+            if stream.reading():
+                continue
+
+            try:
+                data = yield stream.read_bytes(1024, partial=True)
+                self.send_data(data)
+            except StreamClosedError:
+                print('Streamer disconnected.')
 
     def send_data(self, data):
         try:
             for client in StreamHandler.CLIENTS:
-                self.ioloop.add_callback(partial(client.write_media, data))
+                self.io_loop.add_callback(client.write_media, data)
         except Exception as e:
             print(e)
-        self.read()
 
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
         self.write(
             """
-<video width="640" height="480" controls>
-  <source src="/stream" type="video/mp4">
-  Your browser does not support the video tag.
+<video autoplay="true" controls="controls" width="640" height="480">
+    <source src="/stream" type="video/webm" />
+    Your browser does not support HTML5 streaming!
 </video>
 """
         )
@@ -66,7 +69,8 @@ class MainHandler(tornado.web.RequestHandler):
 def make_app():
     return tornado.web.Application([
         (r'/', MainHandler),
-        (r'/stream', StreamHandler)
+        (r'/stream', StreamHandler),
+        (r'/static/(.*)', tornado.web.StaticFileHandler, {'path': '.'})
     ], debug=True)
 
 
