@@ -19,7 +19,7 @@ class StreamHandler(tornado.web.RequestHandler):
 
     @tornado.web.asynchronous
     def get(self):
-        self.set_header('Content-Type', 'video/webm')
+        self.set_header('Content-Type', 'video/mpeg')
         self.flush()
 
     async def write_media(self, data):
@@ -45,6 +45,7 @@ class Server(tornado.tcpserver.TCPServer):
                 self.send_data(data)
             except StreamClosedError:
                 print('Streamer disconnected.')
+                stream.close()
 
     def send_data(self, data):
         try:
